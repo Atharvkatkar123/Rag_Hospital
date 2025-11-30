@@ -523,9 +523,9 @@ def chat():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
-if __name__ == '__main__':
-    print("🚀 Starting Smart Healthcare Chatbot on Render...")
-    port = int(os.environ.get("PORT", 10000))   # Render assigns this port
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
 
 
