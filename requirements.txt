@@ -2,6 +2,6 @@ Flask
 sentence-transformers
 faiss-cpu
 numpy
-google-generativeai
+google-genai
 python-dotenv
 flask_limiter
