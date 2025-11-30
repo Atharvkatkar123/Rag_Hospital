@@ -1,7 +1,11 @@
-Flask
+flask
+google-genai
 sentence-transformers
 faiss-cpu
 numpy
-google-genai
+protobuf==3.20.*
+requests
+psutil
 python-dotenv
 flask_limiter
+
