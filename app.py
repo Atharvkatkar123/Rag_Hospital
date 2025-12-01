@@ -419,7 +419,7 @@ def home():
 
                 const icon = document.createElement('div');
                 icon.className = 'message-icon';
-                icon.textContent = isUser ? '👤' : '🤖';
+                icon.textContent = isUser ? '👤' : '👩🏻‍⚕️';
 
                 const bubble = document.createElement('div');
                 bubble.className = 'message-bubble';
@@ -514,3 +514,4 @@ def chat():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
