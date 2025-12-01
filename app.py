@@ -77,7 +77,7 @@ ANSWER:
 """
     
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
@@ -555,3 +555,4 @@ def chat():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
+
