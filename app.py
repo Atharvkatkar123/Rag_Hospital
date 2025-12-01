@@ -537,6 +537,8 @@ def chat():
         return jsonify({'error': 'Server error'}), 500
 
 if __name__ == '__main__':
-    print("🚀 Starting Sunrise Hospital Chatbot...")
-    port = int(os.environ.get("PORT", 10000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    # LOCAL development only (when you run: python app.py)
+    port = int(os.environ.get("PORT", 5000))
+    print(f"🔧 Development mode on http://localhost:{port}")
+    app.run(host='0.0.0.0', port=port, debug=True)
+
