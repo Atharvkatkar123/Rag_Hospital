@@ -1,105 +1,72 @@
 from flask import Flask, request, jsonify, render_template_string
-from sentence_transformers import SentenceTransformer
-import faiss
-import numpy as np
 import google.generativeai as genai
 import os
 import json
 from dotenv import load_dotenv
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-import warnings
-import psutil
 from datetime import datetime
-
-warnings.filterwarnings("ignore")
 
 app = Flask(__name__)
 
 load_dotenv()
-api_ky = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=api_ky)
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 limiter = Limiter(
     key_func=get_remote_address,
     app=app,
-    default_limits=["20 per hour"]
+    default_limits=["30 per hour"]
 )
 
-# ✅ Global variables for lazy loading
-embedder = None
-index = None
 documents = None
 
-def load_models():
-    """Lazy load models on first request"""
-    global embedder, index, documents
-    
-    if embedder is None:
-        print("⏳ Loading models (first request)...")
-        start_time = datetime.now()
-        
-        embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        index = faiss.read_index("hospital_index.faiss")
-        
+def load_documents():
+    global documents
+    if documents is None:
         with open("hospital_docs.json") as f:
             documents = json.load(f)
-        
-        elapsed = (datetime.now() - start_time).total_seconds()
-        print(f"✅ Models loaded in {elapsed:.2f}s ({len(documents)} chunks)")
+        print(f"✅ Loaded {len(documents)} documents")
 
-def retrieve_context(query, k=5):
-    query_emb = embedder.encode([query], normalize_embeddings=True)
-    distances, indices = index.search(np.array(query_emb), k)
-    return [documents[i] for i in indices[0]]
-
-def print_usage():
-    process = psutil.Process()
-    mem = process.memory_info().rss / (1024 * 1024)
-    cpu = process.cpu_percent(interval=0.1)
-    print(f"💻 RAM: {mem:.2f} MB | CPU: {cpu:.1f}%")
+def simple_search(query, docs, k=10):
+    """Fast keyword-based search"""
+    keywords = query.lower().split()
+    scored = []
+    
+    for i, doc in enumerate(docs):
+        doc_lower = doc.lower()
+        score = sum(doc_lower.count(kw) for kw in keywords)
+        if score > 0:
+            scored.append((score, i))
+    
+    scored.sort(reverse=True)
+    return [docs[i] for _, i in scored[:k]]
 
 def generate_answer(query):
-    context = retrieve_context(query)
+    load_documents()
     
-    prompt = f"""
-You are a helpful medical assistant for Sunrise Community Hospital.
-Use ONLY the following context to answer questions.
-If the answer is not in the context, say: "I don't know".
-
-CONTEXT:
-{' '.join(context)}
-
-QUESTION:
-{query}
-
-ANSWER:
-"""
+    # Quick search to reduce context size
+    relevant_docs = simple_search(query, documents, k=10)
+    context = '\n\n'.join(relevant_docs)
     
-    try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        response = model.generate_content(prompt)
-        return response.text.strip()
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        return "Sorry, I'm having trouble right now. Please try again."
+    prompt = f"""You are Sunrise Hospital's assistant. Answer using ONLY this context:
 
-# ✅ Fast health endpoint (no model loading)
+{context}
+
+Question: {query}
+
+Answer:"""
+    
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    response = model.generate_content(prompt)
+    return response.text.strip()
+
 @app.route('/health')
 def health():
-    return jsonify({
-        'status': 'alive',
-        'models_loaded': embedder is not None,
-        'timestamp': datetime.now().isoformat()
-    }), 200
-
-@app.route('/ping')
-def ping():
-    return 'pong', 200
+    return jsonify({'status': 'alive'}), 200
 
 @app.route('/')
 def home():
-    html_content = '''
+    html_content ='''
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -528,31 +495,22 @@ def home():
             userInput.focus();
         </script>
     </body>
-    </html>
-    '''
+    </html>'''
     return render_template_string(html_content)
 
 @app.route('/api/chat', methods=['POST'])
-@limiter.limit("5 per minute")
+@limiter.limit("10 per minute")
 def chat():
-    # ✅ Load models on first request
-    load_models()
-    
-    data = request.json
-    question = data.get('question', '')
-    print_usage()
-    
-    if not question:
-        return jsonify({'error': 'No question provided'}), 400
-    
     try:
+        question = request.json.get('question', '').strip()
+        if not question:
+            return jsonify({'error': 'No question'}), 400
+        
         answer = generate_answer(question)
-        return jsonify({'answer': answer})
+        return jsonify({'answer': answer}), 200
     except Exception as e:
-        print(f"❌ Error: {e}")
-        return jsonify({'error': 'Server error'}), 500
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
-
+    app.run(host='0.0.0.0', port=port)
