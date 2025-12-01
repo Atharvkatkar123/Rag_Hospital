@@ -527,7 +527,16 @@ if __name__ == '__main__':
     print("🚀 Starting Smart Healthcare Chatbot...")
     print("🌐 Open: http://localhost:5000")
     port = int(os.environ.get("PORT", 10000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    
+    # Use gunicorn in production (Render automatically uses it)
+    if os.environ.get("RENDER"):
+        # Render will use: gunicorn app:app
+        pass
+    else:
+        # Local development
+        app.run(debug=True, host='0.0.0.0', port=port)
+
+
 
 
 
