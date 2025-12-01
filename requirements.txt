@@ -1,12 +1,11 @@
 flask
-sentence-transformers
-faiss-cpu
 google-generativeai
 python-dotenv
 flask-limiter
 psutil==5.9.6
 numpy
 gunicorn==21.2.0
+
 
 
 
