@@ -1,12 +1,13 @@
-flask==3.0.0
-sentence-transformers==2.2.2
-faiss-cpu==1.7.4
-google-generativeai==0.3.2
-python-dotenv==1.0.0
-flask-limiter==3.5.0
+flask
+sentence-transformers
+faiss-cpu
+google-generativeai
+python-dotenv
+flask-limiter
 psutil==5.9.6
-numpy==1.24.3
+numpy
 gunicorn==21.2.0
+
 
 
 
