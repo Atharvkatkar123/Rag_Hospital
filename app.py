@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, render_template_string
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
-import google.generativeai as genai  # ✅ FIXED
+import google.generativeai as genai
 import os
 import json
 from dotenv import load_dotenv
@@ -18,8 +18,6 @@ app = Flask(__name__)
 
 load_dotenv()
 api_ky = os.getenv("GEMINI_API_KEY")
-
-# ✅ Configure Gemini
 genai.configure(api_key=api_ky)
 
 limiter = Limiter(
@@ -28,13 +26,27 @@ limiter = Limiter(
     default_limits=["20 per hour"]
 )
 
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+# ✅ Global variables for lazy loading
+embedder = None
+index = None
+documents = None
 
-print("📚 Loading Hospital Index...")
-index = faiss.read_index("hospital_index.faiss")
-print("📄 Loading Documents...")
-documents = json.load(open("hospital_docs.json"))
-print(f"✅ Loaded {len(documents)} document chunks")
+def load_models():
+    """Lazy load models on first request"""
+    global embedder, index, documents
+    
+    if embedder is None:
+        print("⏳ Loading models (first request)...")
+        start_time = datetime.now()
+        
+        embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        index = faiss.read_index("hospital_index.faiss")
+        
+        with open("hospital_docs.json") as f:
+            documents = json.load(f)
+        
+        elapsed = (datetime.now() - start_time).total_seconds()
+        print(f"✅ Models loaded in {elapsed:.2f}s ({len(documents)} chunks)")
 
 def retrieve_context(query, k=5):
     query_emb = embedder.encode([query], normalize_embeddings=True)
@@ -49,7 +61,7 @@ def print_usage():
 
 def generate_answer(query):
     context = retrieve_context(query)
-
+    
     prompt = f"""
 You are a helpful medical assistant for Sunrise Community Hospital.
 Use ONLY the following context to answer questions.
@@ -63,20 +75,21 @@ QUESTION:
 
 ANSWER:
 """
-
+    
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
         print(f"❌ Error: {e}")
         return "Sorry, I'm having trouble right now. Please try again."
 
-# Health endpoints
+# ✅ Fast health endpoint (no model loading)
 @app.route('/health')
 def health():
     return jsonify({
         'status': 'alive',
+        'models_loaded': embedder is not None,
         'timestamp': datetime.now().isoformat()
     }), 200
 
@@ -87,7 +100,7 @@ def ping():
 @app.route('/')
 def home():
     html_content = '''
-    <<!DOCTYPE html>
+    <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
@@ -522,6 +535,9 @@ def home():
 @app.route('/api/chat', methods=['POST'])
 @limiter.limit("5 per minute")
 def chat():
+    # ✅ Load models on first request
+    load_models()
+    
     data = request.json
     question = data.get('question', '')
     print_usage()
@@ -533,12 +549,9 @@ def chat():
         answer = generate_answer(question)
         return jsonify({'answer': answer})
     except Exception as e:
-        print(f"❌ Chat Error: {e}")
+        print(f"❌ Error: {e}")
         return jsonify({'error': 'Server error'}), 500
 
 if __name__ == '__main__':
-    # LOCAL development only (when you run: python app.py)
     port = int(os.environ.get("PORT", 5000))
-    print(f"🔧 Development mode on http://localhost:{port}")
     app.run(host='0.0.0.0', port=port, debug=True)
-
