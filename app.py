@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, render_template_string
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
-from google import genai
+import google.generativeai as genai  # ✅ FIXED
 import os
 import json
 from dotenv import load_dotenv
@@ -10,8 +10,8 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import warnings
 import psutil
+from datetime import datetime
 
- 
 warnings.filterwarnings("ignore")
 
 app = Flask(__name__)
@@ -19,59 +19,70 @@ app = Flask(__name__)
 load_dotenv()
 api_ky = os.getenv("GEMINI_API_KEY")
 
+# ✅ Configure Gemini
+genai.configure(api_key=api_ky)
+
 limiter = Limiter(
     key_func=get_remote_address,
     app=app,
     default_limits=["20 per hour"]
 )
 
-
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-print("Loading Indexes")
+print("📚 Loading Hospital Index...")
 index = faiss.read_index("hospital_index.faiss")
-print("Documents chunks")
+print("📄 Loading Documents...")
 documents = json.load(open("hospital_docs.json"))
-
-client = genai.Client(api_key=api_ky)
-
+print(f"✅ Loaded {len(documents)} document chunks")
 
 def retrieve_context(query, k=5):
     query_emb = embedder.encode([query], normalize_embeddings=True)
     distances, indices = index.search(np.array(query_emb), k)
     return [documents[i] for i in indices[0]]
 
-
 def print_usage():
     process = psutil.Process()
     mem = process.memory_info().rss / (1024 * 1024)
     cpu = process.cpu_percent(interval=0.1)
-    print(f"RAM Used: {mem:.2f} MB, CPU: {cpu:.1f}%")
-
+    print(f"💻 RAM: {mem:.2f} MB | CPU: {cpu:.1f}%")
 
 def generate_answer(query):
     context = retrieve_context(query)
 
     prompt = f"""
-You are a question-answering system.
-Use ONLY the following context to answer.
-If the answer is not present, reply exactly: "I don't know".
+You are a helpful medical assistant for Sunrise Community Hospital.
+Use ONLY the following context to answer questions.
+If the answer is not in the context, say: "I don't know".
 
 CONTEXT:
-{ ' '.join(context) }
+{' '.join(context)}
 
 QUESTION:
-{ query }
+{query}
 
 ANSWER:
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
+    try:
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return "Sorry, I'm having trouble right now. Please try again."
 
-    return response.text.strip()
+# Health endpoints
+@app.route('/health')
+def health():
+    return jsonify({
+        'status': 'alive',
+        'timestamp': datetime.now().isoformat()
+    }), 200
+
+@app.route('/ping')
+def ping():
+    return 'pong', 200
 
 @app.route('/')
 def home():
@@ -514,31 +525,18 @@ def chat():
     data = request.json
     question = data.get('question', '')
     print_usage()
-        
+    
     if not question:
-        return jsonify({'error': 'No question provided'}),400
+        return jsonify({'error': 'No question provided'}), 400
+    
     try:
         answer = generate_answer(question)
         return jsonify({'answer': answer})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    
+        print(f"❌ Chat Error: {e}")
+        return jsonify({'error': 'Server error'}), 500
+
 if __name__ == '__main__':
-    print("🚀 Starting Smart Healthcare Chatbot...")
-    print("🌐 Open: http://localhost:5000")
+    print("🚀 Starting Sunrise Hospital Chatbot...")
     port = int(os.environ.get("PORT", 10000))
-    
-    # Use gunicorn in production (Render automatically uses it)
-    if os.environ.get("RENDER"):
-        # Render will use: gunicorn app:app
-        pass
-    else:
-        # Local development
-        app.run(debug=True, host='0.0.0.0', port=port)
-
-
-
-
-
-
-
+    app.run(debug=False, host='0.0.0.0', port=port)
