@@ -494,39 +494,27 @@ def home():
             const userInput = document.getElementById('userInput');
             const sendBtn = document.getElementById('sendBtn');
             const typingIndicator = document.getElementById('typingIndicator');
-        
-            // ✅ Enhanced message function with clickable links
+
+            // Add message to chat
             function addMessage(text, isUser = false) {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
-        
+            
                 const icon = document.createElement('div');
                 icon.className = 'message-icon';
-                icon.textContent = isUser ? '👤' : '🤖';
-        
+                icon.textContent = isUser ? '👤' : '👩🏻‍⚕️';
+            
                 const bubble = document.createElement('div');
                 bubble.className = 'message-bubble';
                 
-                // Format the message
-                let formattedText = text;
+                // ✅ Convert URLs to clickable links
+                const urlRegex = /(https?:\/\/[^\s]+)/g;
+                const linkedText = text.replace(urlRegex, (url) => {
+                    return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #1596AF; text-decoration: underline;">${url}</a>`;
+                });
                 
-                // URLs to clickable links
-                formattedText = formattedText.replace(
-                    /(https?:\/\/[^\s]+)/g,
-                    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-                );
-                
-                // Phone numbers to tel: links
-                formattedText = formattedText.replace(
-                    /(\+\d{1,3}[-\s]?\d{2,3}[-\s]?\d{4}[-\s]?\d{4})/g,
-                    '<a href="tel:$1">$1</a>'
-                );
-                
-                // Line breaks
-                formattedText = formattedText.replace(/\n/g, '<br>');
-                
-                bubble.innerHTML = formattedText;
-        
+                bubble.innerHTML = linkedText;  // ✅ Use innerHTML instead of textContent
+            
                 if (isUser) {
                     messageDiv.appendChild(bubble);
                     messageDiv.appendChild(icon);
@@ -534,11 +522,12 @@ def home():
                     messageDiv.appendChild(icon);
                     messageDiv.appendChild(bubble);
                 }
-        
+            
                 chatMessages.appendChild(messageDiv);
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
-        
+
+
             // Show/hide typing indicator
             function showTyping(show) {
                 typingIndicator.classList.toggle('active', show);
@@ -546,18 +535,22 @@ def home():
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 }
             }
-        
+
             // Send message
             async function sendMessage() {
                 const message = userInput.value.trim();
                 if (!message) return;
-        
+
+                // Add user message
                 addMessage(message, true);
                 userInput.value = '';
                 sendBtn.disabled = true;
+
+                // Show typing
                 showTyping(true);
-        
+
                 try {
+                    // Call your backend API here
                     const response = await fetch('/api/chat', {
                         method: 'POST',
                         headers: {
@@ -565,20 +558,22 @@ def home():
                         },
                         body: JSON.stringify({ question: message })
                     });
-        
+
                     const data = await response.json();
+
+                    // Hide typing and show response
                     showTyping(false);
-                    addMessage(data.answer || data.error || 'No response', false);
-        
+                    addMessage(data.answer, false);
+
                 } catch (error) {
                     showTyping(false);
                     addMessage("Sorry, I'm having trouble connecting. Please try again.", false);
                 }
-        
+
                 sendBtn.disabled = false;
                 userInput.focus();
             }
-        
+
             // Event listeners
             sendBtn.addEventListener('click', sendMessage);
             userInput.addEventListener('keypress', (e) => {
@@ -586,7 +581,8 @@ def home():
                     sendMessage();
                 }
             });
-        
+
+            // Focus input on load
             userInput.focus();
         </script>
 
