@@ -127,7 +127,7 @@ PATIENT QUESTION: {query}
 YOUR ANSWER:"""
     
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('models/gemma-3-4b-it')
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
