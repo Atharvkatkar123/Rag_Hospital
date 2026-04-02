@@ -29,7 +29,6 @@ def load_documents():
         with open("hospital_docs.json") as f:
             documents = json.load(f)
         
-        # Try to load pre-computed embeddings
         try:
             with open("hospital_embeddings.json") as f:
                 doc_embeddings = json.load(f)
@@ -49,10 +48,10 @@ def cosine_similarity(a, b):
     return dot_product / (magnitude_a * magnitude_b)
 
 def get_embedding(text):
-    """Get embedding from Google API"""
+    """Get query embedding using gemini-embedding-001"""
     try:
         result = genai.embed_content(
-            model="models/text-embedding-004",
+            model="models/gemini-embedding-001",   # ✅ Updated model
             content=text,
             task_type="retrieval_query"
         )
@@ -62,62 +61,98 @@ def get_embedding(text):
         return None
 
 def semantic_search(query, k=5):
-    """Search using embeddings"""
+    """Search using embeddings with cosine similarity"""
     load_documents()
     
-    # Get query embedding
     query_emb = get_embedding(query)
     if query_emb is None or doc_embeddings is None:
-        # Fallback to keyword search
         return keyword_search(query, k)
     
-    # Calculate similarities
     similarities = []
     for i, doc_emb in enumerate(doc_embeddings):
+        if doc_emb is None:
+            continue
         sim = cosine_similarity(query_emb, doc_emb)
         similarities.append((sim, i))
     
-    # Sort by similarity and return top k
     similarities.sort(reverse=True)
     return [documents[i] for _, i in similarities[:k]]
 
 def keyword_search(query, k=10):
-    """Fallback keyword search"""
+    """
+    Enhanced keyword search with medical synonym expansion.
+    Used as fallback when embeddings are unavailable.
+    """
     load_documents()
-    keywords = query.lower().split()
+
+    # Medical synonym map — expands patient terms to document terms
+    synonym_map = {
+        "fracture": ["fracture", "broken", "bone", "orthopedic", "ortho"],
+        "hair fracture": ["fracture", "hairline", "bone", "orthopedic"],
+        "hairline": ["fracture", "hairline", "bone", "orthopedic"],
+        "broken bone": ["fracture", "bone", "orthopedic"],
+        "joint": ["joint", "orthopedic", "knee", "hip"],
+        "heart": ["heart", "cardiac", "cardiology", "chest"],
+        "chest pain": ["heart", "cardiac", "cardiology", "chest"],
+        "child": ["child", "pediatric", "kid", "infant"],
+        "baby": ["child", "pediatric", "infant", "pediatrics"],
+        "pregnancy": ["pregnancy", "gynecology", "obstetrics", "maternity"],
+        "women": ["gynecology", "obstetrics", "women"],
+        "fever": ["general medicine", "fever", "infection"],
+        "emergency": ["emergency", "24/7", "urgent"],
+        "pooja": ["pooja", "emergency", "dr. pooja"],
+        "xray": ["radiology", "x-ray", "imaging", "scan"],
+        "x-ray": ["radiology", "x-ray", "imaging"],
+    }
+
+    query_lower = query.lower()
+    expanded_keywords = set(query_lower.split())
+
+    # Expand with synonyms
+    for term, synonyms in synonym_map.items():
+        if term in query_lower:
+            expanded_keywords.update(synonyms)
+
     scored = []
-    
     for i, doc in enumerate(documents):
         doc_lower = doc.lower()
-        # Count keyword occurrences
-        score = sum(doc_lower.count(kw) for kw in keywords)
-        # Bonus for exact phrase match
-        if query.lower() in doc_lower:
+        score = sum(doc_lower.count(kw) for kw in expanded_keywords)
+        if query_lower in doc_lower:
             score += 100
         if score > 0:
             scored.append((score, i))
-    
+
     scored.sort(reverse=True)
     return [documents[i] for _, i in scored[:k]]
 
 def generate_answer(query):
-    """Generate answer using semantic search + Gemini"""
-    # Use semantic search if embeddings available, else keyword
+    """Generate answer using semantic search + Gemma 3"""
+    load_documents()
+
     if doc_embeddings:
         relevant_docs = semantic_search(query, k=5)
     else:
-        relevant_docs = keyword_search(query, k=10)
-    
+        relevant_docs = keyword_search(query, k=5)
+
     if not relevant_docs:
         return "I don't have information about that. Please ask about doctors, facilities, or hospital services."
-    
-    context = '\n\n'.join(relevant_docs)
-    
-    prompt = f"""You are Sunrise Community Hospital's AI assistant.
 
-Answer the patient's question using ONLY the information below.
-Be helpful, professional, and concise.
-If the answer isn't in the context, say "I don't have that specific information."
+    context = '\n\n---\n\n'.join(relevant_docs)
+
+    prompt = f"""You are the AI assistant for Sunrise Community Hospital. Help patients find the right doctor or service.
+
+CRITICAL INSTRUCTIONS:
+- Read the patient's symptoms or condition carefully
+- Map them to the correct department using medical knowledge:
+  * Fracture, broken bone, hairline fracture, bone pain, joint pain → ORTHOPEDICS (Dr. Karthik Menon)
+  * Heart, chest pain, palpitations → CARDIOLOGY (Dr. Suresh Nair)
+  * Child health, baby, infant → PEDIATRICS (Dr. Sunita Reddy / Dr. Vikram Singh)
+  * Pregnancy, women's health → GYNECOLOGY (Dr. Anjali Desai / Dr. Meera Iyer)
+  * Accident, emergency, trauma → EMERGENCY (Dr. Pooja Gupta / Dr. Arun Malhotra, available 24/7)
+  * General illness, fever → GENERAL MEDICINE (Dr. Rajesh Kumar / Dr. Priya Sharma)
+- Always include: doctor name, OPD days, and timings
+- If an appointment link exists, include it
+- Be concise and helpful
 
 HOSPITAL INFORMATION:
 {context}
@@ -125,9 +160,9 @@ HOSPITAL INFORMATION:
 PATIENT QUESTION: {query}
 
 YOUR ANSWER:"""
-    
+
     try:
-        model = genai.GenerativeModel('models/gemma-3-4b-it')
+        model = genai.GenerativeModel('models/gemma-3-4b-it')   # ✅ Updated model
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
@@ -196,7 +231,6 @@ def home():
                 overflow: hidden;
             }
 
-            /* Header */
             .chat-header {
                 background: linear-gradient(135deg, var(--baby-blue) 0%, var(--dark-blue) 100%);
                 color: var(--white);
@@ -216,7 +250,6 @@ def home():
                 opacity: 0.9;
             }
 
-            /* Messages Area */
             .chat-messages {
                 flex: 1;
                 overflow-y: auto;
@@ -231,19 +264,11 @@ def home():
             }
 
             @keyframes slideIn {
-                from {
-                    opacity: 0;
-                    transform: translateY(10px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
             }
 
-            .message.user {
-                justify-content: flex-end;
-            }
+            .message.user { justify-content: flex-end; }
 
             .message-bubble {
                 max-width: 75%;
@@ -285,11 +310,8 @@ def home():
                 background: linear-gradient(135deg, var(--baby-blue) 0%, var(--dark-blue) 100%);
             }
 
-            .message.user .message-icon {
-                background: var(--light-blue);
-            }
+            .message.user .message-icon { background: var(--light-blue); }
 
-            /* Typing Indicator */
             .typing-indicator {
                 display: none;
                 align-items: center;
@@ -301,9 +323,7 @@ def home():
                 margin-left: 45px;
             }
 
-            .typing-indicator.active {
-                display: flex;
-            }
+            .typing-indicator.active { display: flex; }
 
             .typing-dot {
                 width: 8px;
@@ -314,34 +334,21 @@ def home():
                 animation: typing 1.4s infinite;
             }
 
-            .typing-dot:nth-child(2) {
-                animation-delay: 0.2s;
-            }
-
-            .typing-dot:nth-child(3) {
-                animation-delay: 0.4s;
-            }
+            .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+            .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
             @keyframes typing {
-                0%, 60%, 100% {
-                    transform: translateY(0);
-                }
-                30% {
-                    transform: translateY(-10px);
-                }
+                0%, 60%, 100% { transform: translateY(0); }
+                30% { transform: translateY(-10px); }
             }
 
-            /* Input Area */
             .chat-input-area {
                 padding: 20px;
                 background: var(--white);
                 border-top: 2px solid var(--light-blue);
             }
 
-            .chat-input-container {
-                display: flex;
-                gap: 10px;
-            }
+            .chat-input-container { display: flex; gap: 10px; }
 
             #userInput {
                 flex: 1;
@@ -373,148 +380,84 @@ def home():
                 box-shadow: 0 4px 12px var(--shadow);
             }
 
-            #sendBtn:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 6px 20px var(--shadow);
-            }
+            #sendBtn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px var(--shadow); }
+            #sendBtn:active { transform: translateY(0); }
+            #sendBtn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-            #sendBtn:active {
-                transform: translateY(0);
-            }
+            .chat-messages::-webkit-scrollbar { width: 6px; }
+            .chat-messages::-webkit-scrollbar-track { background: var(--off-white); }
+            .chat-messages::-webkit-scrollbar-thumb { background: var(--baby-blue); border-radius: 10px; }
 
-            #sendBtn:disabled {
-                opacity: 0.6;
-                cursor: not-allowed;
-            }
-
-            /* Scrollbar */
-            .chat-messages::-webkit-scrollbar {
-                width: 6px;
-            }
-
-            .chat-messages::-webkit-scrollbar-track {
-                background: var(--off-white);
-            }
-
-            .chat-messages::-webkit-scrollbar-thumb {
-                background: var(--baby-blue);
-                border-radius: 10px;
-            }
-
-            /* Responsive Design */
             @media (max-width: 768px) {
-                .chat-container {
-                    height: 100vh;
-                    border-radius: 0;
-                    max-width: 100%;
-                }
-
-                .chat-header h1 {
-                    font-size: 1.2rem;
-                }
-
-                .message-bubble {
-                    max-width: 85%;
-                    font-size: 0.9rem;
-                }
-
-                .chat-input-area {
-                    padding: 15px;
-                }
-
-                #sendBtn {
-                    padding: 12px 20px;
-                }
+                .chat-container { height: 100vh; border-radius: 0; max-width: 100%; }
+                .chat-header h1 { font-size: 1.2rem; }
+                .message-bubble { max-width: 85%; font-size: 0.9rem; }
+                .chat-input-area { padding: 15px; }
+                #sendBtn { padding: 12px 20px; }
             }
 
             @media (max-width: 480px) {
-                .message-bubble {
-                    max-width: 90%;
-                }
-
-                .message-icon {
-                    width: 30px;
-                    height: 30px;
-                    font-size: 1rem;
-                }
-
-                #userInput {
-                    font-size: 0.9rem;
-                }
-
-                #sendBtn {
-                    font-size: 0.9rem;
-                    padding: 12px 18px;
-                }
+                .message-bubble { max-width: 90%; }
+                .message-icon { width: 30px; height: 30px; font-size: 1rem; }
+                #userInput { font-size: 0.9rem; }
+                #sendBtn { font-size: 0.9rem; padding: 12px 18px; }
             }
         </style>
     </head>
     <body>
         <div class="chat-container">
-            <!-- Header -->
             <div class="chat-header">
                 <h1>✚ Sunrise Hospital</h1>
                 <p>AI Assistant - Ask about doctors, timings & facilities</p>
             </div>
 
-            <!-- Messages Area -->
             <div class="chat-messages" id="chatMessages">
-                <!-- Welcome Message -->
                 <div class="message bot">
                     <div class="message-icon">👩🏻‍⚕️</div>
                     <div class="message-bubble">
-                        Hello! I'm your hospital assistant. Ask me about which doctors to visit there schedule, admission requirements, or any hospital facilities.
+                        Hello! I\'m your hospital assistant. Ask me about which doctors to visit, their schedule, admission requirements, or any hospital facilities.
                     </div>
                 </div>
             </div>
 
-            <!-- Typing Indicator -->
             <div class="typing-indicator" id="typingIndicator">
                 <div class="typing-dot"></div>
                 <div class="typing-dot"></div>
                 <div class="typing-dot"></div>
             </div>
 
-            <!-- Input Area -->
             <div class="chat-input-area">
                 <div class="chat-input-container">
-                    <input 
-                        type="text" 
-                        id="userInput" 
-                        placeholder="Type your problem here..."
-                        autocomplete="off"
-                    >
+                    <input type="text" id="userInput" placeholder="Type your problem here..." autocomplete="off">
                     <button id="sendBtn">Send</button>
                 </div>
             </div>
         </div>
 
         <script>
-            const chatMessages = document.getElementById('chatMessages');
-            const userInput = document.getElementById('userInput');
-            const sendBtn = document.getElementById('sendBtn');
-            const typingIndicator = document.getElementById('typingIndicator');
+            const chatMessages = document.getElementById(\'chatMessages\');
+            const userInput = document.getElementById(\'userInput\');
+            const sendBtn = document.getElementById(\'sendBtn\');
+            const typingIndicator = document.getElementById(\'typingIndicator\');
 
-            // Add message to chat
             function addMessage(text, isUser = false) {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
-            
-                const icon = document.createElement('div');
-                icon.className = 'message-icon';
-                icon.textContent = isUser ? '👤' : '👩🏻‍⚕️';
-            
-                const bubble = document.createElement('div');
-                bubble.className = 'message-bubble';
-                
-                // ✅ Convert URLs to clickable links
+                const messageDiv = document.createElement(\'div\');
+                messageDiv.className = `message ${isUser ? \'user\' : \'bot\'}`;
+
+                const icon = document.createElement(\'div\');
+                icon.className = \'message-icon\';
+                icon.textContent = isUser ? \'👤\' : \'👩🏻\u200d⚕️\';
+
+                const bubble = document.createElement(\'div\');
+                bubble.className = \'message-bubble\';
+
                 const urlRegex = /(https?:\/\/[^\s]+)/g;
                 const linkedText = text.replace(urlRegex, (url) => {
                     return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #1596AF; text-decoration: underline;">${url}</a>`;
                 });
-                
-                bubble.innerHTML = linkedText;  // ✅ Use innerHTML instead of textContent
-            
+
+                bubble.innerHTML = linkedText;
+
                 if (isUser) {
                     messageDiv.appendChild(bubble);
                     messageDiv.appendChild(icon);
@@ -522,70 +465,51 @@ def home():
                     messageDiv.appendChild(icon);
                     messageDiv.appendChild(bubble);
                 }
-            
+
                 chatMessages.appendChild(messageDiv);
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
 
-
-            // Show/hide typing indicator
             function showTyping(show) {
-                typingIndicator.classList.toggle('active', show);
-                if (show) {
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                }
+                typingIndicator.classList.toggle(\'active\', show);
+                if (show) chatMessages.scrollTop = chatMessages.scrollHeight;
             }
 
-            // Send message
             async function sendMessage() {
                 const message = userInput.value.trim();
                 if (!message) return;
 
-                // Add user message
                 addMessage(message, true);
-                userInput.value = '';
+                userInput.value = \'\';
                 sendBtn.disabled = true;
-
-                // Show typing
                 showTyping(true);
 
                 try {
-                    // Call your backend API here
-                    const response = await fetch('/api/chat', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
+                    const response = await fetch(\'/api/chat\', {
+                        method: \'POST\',
+                        headers: { \'Content-Type\': \'application/json\' },
                         body: JSON.stringify({ question: message })
                     });
 
                     const data = await response.json();
-
-                    // Hide typing and show response
                     showTyping(false);
                     addMessage(data.answer, false);
-
                 } catch (error) {
                     showTyping(false);
-                    addMessage("Sorry, I'm having trouble connecting. Please try again.", false);
+                    addMessage("Sorry, I\'m having trouble connecting. Please try again.", false);
                 }
 
                 sendBtn.disabled = false;
                 userInput.focus();
             }
 
-            // Event listeners
-            sendBtn.addEventListener('click', sendMessage);
-            userInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
+            sendBtn.addEventListener(\'click\', sendMessage);
+            userInput.addEventListener(\'keypress\', (e) => {
+                if (e.key === \'Enter\') sendMessage();
             });
 
-            // Focus input on load
             userInput.focus();
         </script>
-
     </body>
     </html>
     '''
@@ -598,17 +522,17 @@ def chat():
         data = request.json
         if not data:
             return jsonify({'error': 'Invalid request'}), 400
-        
+
         question = data.get('question', '').strip()
         if not question:
             return jsonify({'error': 'No question provided'}), 400
-        
+
         print(f"📥 Question: {question}")
         answer = generate_answer(question)
         print(f"📤 Answer: {answer[:100]}...")
-        
+
         return jsonify({'answer': answer}), 200
-        
+
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
@@ -618,5 +542,3 @@ def chat():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
-
-
