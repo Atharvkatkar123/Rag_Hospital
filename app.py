@@ -189,7 +189,7 @@ def home():
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
         <title>Sunrise Hospital - AI-RAG Assistant</title>
         <style>
             * {
@@ -212,7 +212,8 @@ def home():
             body {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
                 background: linear-gradient(135deg, var(--off-white) 0%, var(--light-blue) 100%);
-                height: 100vh;
+                height: 100dvh;
+                min-height: -webkit-fill-available;
                 display: flex;
                 justify-content: center;
                 align-items: center;
@@ -225,7 +226,7 @@ def home():
                 box-shadow: 0 10px 40px var(--shadow);
                 width: 100%;
                 max-width: 800px;
-                height: 90vh;
+                height: 90dvh;
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
@@ -389,7 +390,7 @@ def home():
             .chat-messages::-webkit-scrollbar-thumb { background: var(--baby-blue); border-radius: 10px; }
 
             @media (max-width: 768px) {
-                .chat-container { height: 100vh; border-radius: 0; max-width: 100%; }
+                .chat-container { height: 100dvh; border-radius: 0; max-width: 100%; }
                 .chat-header h1 { font-size: 1.2rem; }
                 .message-bubble { max-width: 85%; font-size: 0.9rem; }
                 .chat-input-area { padding: 15px; }
