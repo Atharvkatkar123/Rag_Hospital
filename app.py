@@ -162,7 +162,7 @@ PATIENT QUESTION: {query}
 YOUR ANSWER:"""
 
     try:
-        model = genai.GenerativeModel('models/gemma-3-4b-it')   # ✅ Updated model
+        model = genai.GenerativeModel('models/gemini-3.1-flash-lite-preview')   # ✅ Updated model
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
